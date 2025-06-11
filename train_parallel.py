@@ -60,7 +60,7 @@ def train_parallel_ppo():
     # Параметры
     num_envs = 12  # Количество параллельных сред
     max_steps_per_env = 50  # Максимальное количество шагов в эпизоде
-    total_timesteps = 2000  # Общее количество шагов обучения
+    total_timesteps = 50000  # Общее количество шагов обучения
     
     # Создаем папки
     os.makedirs("./checkpoints", exist_ok=True)
@@ -92,7 +92,7 @@ def train_parallel_ppo():
         policy_kwargs=policy_kwargs,
         verbose=1,
         learning_rate=3e-4,  # Стандартный learning rate для PPO
-        n_steps=1024,  # Количество шагов на среду для сбора данных
+        n_steps=50,  # Количество шагов на среду для сбора данных
         batch_size=64,  # Размер батча (должен быть <= n_steps * num_envs)
         gamma=0.99,
         n_epochs=100,
