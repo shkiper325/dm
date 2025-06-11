@@ -80,7 +80,7 @@ def train_parallel_ppo():
     
     # Конфигурация политики
     policy_kwargs = dict(
-        net_arch=dict(pi=[128, 64, 32], vf=[128, 64, 32]),
+        net_arch=dict(pi=[128, 64], vf=[128, 64]),
         features_extractor_class=CustomCNNFeatureExtractor,
         features_extractor_kwargs=dict(features_dim=128),
     )
@@ -92,14 +92,15 @@ def train_parallel_ppo():
         policy_kwargs=policy_kwargs,
         verbose=1,
         learning_rate=3e-4,  # Стандартный learning rate для PPO
-        n_steps=128,  # Количество шагов на среду для сбора данных
-        batch_size=256,  # Размер батча (должен быть <= n_steps * num_envs)
+        n_steps=1024,  # Количество шагов на среду для сбора данных
+        batch_size=64,  # Размер батча (должен быть <= n_steps * num_envs)
         gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
+        n_epochs=100,
+        #gae_lambda=0.95,
+        #clip_range=0.2,
+        #ent_coef=0.01,
         device='cpu',
-        tensorboard_log="./logs/"
+        tensorboard_log="./tb/"
     )
     
     # Настройка коллбеков

@@ -48,7 +48,8 @@ class RogueEnv(gym.Env):
                     ret += 1
         return ret
 
-    def __init__(self, max_steps = 50) -> None:
+    def __init__(self, max_steps: int) -> None:
+        print(f'max_steps: {max_steps}')
         super().__init__()
         # Определение пространства действий и наблюдений.
         # Пока приведены примерные значения, которые можно изменить под конкретные требования.

@@ -198,3 +198,4 @@ __pycache__
 checkpoints/
 logs/
 rogue.esave
+tb/*

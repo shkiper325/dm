@@ -67,14 +67,16 @@ model = PPO(
     env=env.RogueEnv(),
     policy_kwargs=policy_kwargs,
     verbose=1,
-    learning_rate=1e-3,      # Уменьшил learning_rate для стабильности
-    n_steps=128,
+    learning_rate=3e-4,      # Уменьшил learning_rate для стабильности
+    n_steps=2048,
     batch_size=64,
     gamma=0.99,
-    gae_lambda=0.95,
-    clip_range=0.2,
-    ent_coef=0.01,           # Добавил энтропию для исследования
-    device='cpu'             # Принудительно используем CPU как рекомендовано
+    #gae_lambda=0.95,
+    #clip_range=0.2,
+    #ent_coef=0.01,         # Добавил энтропию для исследования
+    device='cpu',           # Принудительно используем CPU как рекомендовано
+    n_epochs=100,            # Увеличил количество эпох для лучшей сходимости
+    tensorboard_log = './tb/'
 )
 
 # Очищаем файл rewards.txt перед началом обучения
