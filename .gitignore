@@ -199,3 +199,4 @@ checkpoints/
 logs/
 rogue.esave
 tb/*
+rewards.txt

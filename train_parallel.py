@@ -17,6 +17,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
 from model_save_callback import SaveEveryNStepsCallback
 
+SNAPSHOT_NAME = "checkpoints/ppo_rogue_parallel_48000_steps.zip"
 
 class CustomCNNFeatureExtractor(BaseFeaturesExtractor):
     """CNN-экстрактор признаков для входного тензора формы (C=128, H=24, W=80)."""
@@ -60,7 +61,7 @@ def train_parallel_ppo():
     # Параметры
     num_envs = 12  # Количество параллельных сред
     max_steps_per_env = 50  # Максимальное количество шагов в эпизоде
-    total_timesteps = 50000  # Общее количество шагов обучения
+    total_timesteps = 100000  # Общее количество шагов обучения
     
     # Создаем папки
     os.makedirs("./checkpoints", exist_ok=True)
@@ -86,28 +87,38 @@ def train_parallel_ppo():
     )
     
     # Создание модели PPO
-    model = PPO(
-        policy="MlpPolicy",
-        env=vec_env,
-        policy_kwargs=policy_kwargs,
-        verbose=1,
-        learning_rate=3e-4,  # Стандартный learning rate для PPO
-        n_steps=256,  # Количество шагов на среду для сбора данных
-        batch_size=32,  # Размер батча (должен быть <= n_steps * num_envs)
-        gamma=0.99,
-        n_epochs=100,
-        #gae_lambda=0.95,
-        #clip_range=0.2,
-        #ent_coef=0.01,
-        device='cuda',
-        tensorboard_log="./tb/"
-    )
+    if SNAPSHOT_NAME is not None:
+        model = PPO.load(SNAPSHOT_NAME, env=vec_env, policy_kwargs=policy_kwargs)
+        print('Model loaded from snapshot:', SNAPSHOT_NAME)
+    else:
+        model = PPO(
+            policy="MlpPolicy",
+            env=vec_env,
+            policy_kwargs=policy_kwargs,
+            verbose=1,
+            learning_rate=3e-4,  # Стандартный learning rate для PPO
+            n_steps=64,  # Количество шагов на среду для сбора данных
+            batch_size=64,  # Размер батча (должен быть <= n_steps * num_envs)
+            gamma=0.99,
+            #gae_lambda=0.95,
+            #clip_range=0.2,
+            #ent_coef=0.01,
+            device='cuda',
+            tensorboard_log="./tb/"
+        )
+        print('Cold start model created')
     
     # Настройка коллбеков
     checkpoint_callback = CheckpointCallback(
-        save_freq=500,  # Сохранять каждые 500 шагов
+        save_freq=200,  # Сохранять каждые 200 шагов
         save_path="./checkpoints/",
         name_prefix="ppo_rogue_parallel"
+    )
+
+    reward_logging_callback = SaveEveryNStepsCallback(
+        log_freq=100,  # Сохранять каждые 100 шагов
+        log_file="rewards.txt",
+        verbose=1
     )
     
     # Очищаем файл rewards.txt
@@ -125,7 +136,7 @@ def train_parallel_ppo():
     # Обучение
     model.learn(
         total_timesteps=total_timesteps,
-        callback=checkpoint_callback,
+        callback=[checkpoint_callback, reward_logging_callback],
         progress_bar=True
     )
     

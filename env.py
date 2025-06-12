@@ -121,7 +121,7 @@ class RogueEnv(gym.Env):
         self.main_score = new_main_score
 
         new_door_score = self.plus_tracker.dist(obs)
-        door_diff = np.tanh(new_door_score - self.door_score)
+        door_diff = 0 if new_door_score == 0 else np.tanh(new_door_score - self.door_score)
         self.door_score = new_door_score
 
         self.curr_step += 1
@@ -130,7 +130,7 @@ class RogueEnv(gym.Env):
         terminated = False  # Пока нет условий естественного завершения
         truncated = self.curr_step >= self.max_steps
 
-        info = {"main_score": self.main_score, "steps": self.curr_step  , "door_score": self.door_score}
+        info = {"main_score": self.main_score, "steps": self.curr_step, "door_score": self.door_score}
 
         return list2onehot(obs), main_diff + door_diff, terminated, truncated, info
 
