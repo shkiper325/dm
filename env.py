@@ -61,9 +61,25 @@ class RogueEnv(gym.Env):
 
         self.max_steps = max_steps
         self.curr_step = 0
-        self.main_score = 0
+        # self.main_score = 0
 
         self.plus_tracker = TerminalScreen()
+
+    def _find_player(self, state: List[str]) -> Tuple[int, int]:
+        """
+        Находит позицию игрока '@' в состоянии игры.
+        
+        Args:
+            state (List[str]): Состояние игры, представленное списком строк.
+        
+        Returns:
+            Tuple[int, int]: Координаты игрока (row, col).
+        """
+        for i, row in enumerate(state):
+            j = row.find('@')
+            if j != -1:
+                return i, j
+        raise ValueError("Игрок '@' не найден в состоянии игры.")
 
     def reset(self, seed=None, options=None) -> Tuple[Any, Dict[str, Any]]:
         """
@@ -76,14 +92,15 @@ class RogueEnv(gym.Env):
 
         self.iface.restart()
         obs = self.iface.state()
+        # self.visited = set(self._find_player(obs))  # Инициализируем посещённые позиции
         self.plus_tracker.reset()
         
         self.door_score = self.plus_tracker.dist(obs)
-        self.main_score = self._non_empty(obs)
+        # self.main_score = self._non_empty(obs)
 
         self.curr_step = 0
 
-        info = {"main_score": self.main_score, "steps": self.curr_step, "door_score": self.door_score}
+        info = {"steps": self.curr_step}
 
         return list2onehot(obs), info
 
@@ -116,13 +133,15 @@ class RogueEnv(gym.Env):
         self.iface.key(action_map[action])
         obs = self.iface.state()
 
-        new_main_score = self._non_empty(obs)
-        main_diff = np.tanh(new_main_score - self.main_score)
-        self.main_score = new_main_score
+        # new_main_score = self._non_empty(obs)
+        # main_diff = np.tanh(new_main_score - self.main_score)
+        # self.main_score = new_main_score
 
         new_door_score = self.plus_tracker.dist(obs)
-        door_diff = 0 if new_door_score == 0 else np.tanh(new_door_score - self.door_score)
+        door_diff = new_door_score - self.door_score
         self.door_score = new_door_score
+
+        reward = -door_diff  # Используем разницу в расстоянии до '+'
 
         self.curr_step += 1
         
@@ -130,9 +149,10 @@ class RogueEnv(gym.Env):
         terminated = False  # Пока нет условий естественного завершения
         truncated = self.curr_step >= self.max_steps
 
-        info = {"main_score": self.main_score, "steps": self.curr_step, "door_score": self.door_score}
+        info = {"steps": self.curr_step}
 
-        return list2onehot(obs), main_diff + door_diff, terminated, truncated, info
+        # return list2onehot(obs), main_diff + door_diff, terminated, truncated, info
+        return list2onehot(obs), reward, terminated, truncated, info
 
     def render(self, mode: str = "human") -> None:
         

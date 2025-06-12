@@ -16,8 +16,9 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
 from model_save_callback import SaveEveryNStepsCallback
+from mean_reward_per_batch_callback import MeanRewardPerBatchCallback
 
-SNAPSHOT_NAME = "checkpoints/ppo_rogue_parallel_48000_steps.zip"
+SNAPSHOT_NAME = None #"checkpoints/ppo_rogue_parallel_48000_steps.zip"
 
 class CustomCNNFeatureExtractor(BaseFeaturesExtractor):
     """CNN-экстрактор признаков для входного тензора формы (C=128, H=24, W=80)."""
@@ -60,7 +61,7 @@ def train_parallel_ppo():
     
     # Параметры
     num_envs = 12  # Количество параллельных сред
-    max_steps_per_env = 50  # Максимальное количество шагов в эпизоде
+    max_steps_per_env = 128  # Максимальное количество шагов в эпизоде
     total_timesteps = 100000  # Общее количество шагов обучения
     
     # Создаем папки
@@ -88,7 +89,7 @@ def train_parallel_ppo():
     
     # Создание модели PPO
     if SNAPSHOT_NAME is not None:
-        model = PPO.load(SNAPSHOT_NAME, env=vec_env, policy_kwargs=policy_kwargs)
+        model = PPO.load(SNAPSHOT_NAME, env=vec_env)
         print('Model loaded from snapshot:', SNAPSHOT_NAME)
     else:
         model = PPO(
@@ -115,11 +116,7 @@ def train_parallel_ppo():
         name_prefix="ppo_rogue_parallel"
     )
 
-    reward_logging_callback = SaveEveryNStepsCallback(
-        log_freq=100,  # Сохранять каждые 100 шагов
-        log_file="rewards.txt",
-        verbose=1
-    )
+    reward_per_batch_callback = MeanRewardPerBatchCallback(verbose=0)
     
     # Очищаем файл rewards.txt
     with open("rewards.txt", 'w') as f:
@@ -136,7 +133,7 @@ def train_parallel_ppo():
     # Обучение
     model.learn(
         total_timesteps=total_timesteps,
-        callback=[checkpoint_callback, reward_logging_callback],
+        callback=[checkpoint_callback, reward_per_batch_callback],
         progress_bar=True
     )
     
