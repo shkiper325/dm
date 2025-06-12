@@ -92,20 +92,20 @@ def train_parallel_ppo():
         policy_kwargs=policy_kwargs,
         verbose=1,
         learning_rate=3e-4,  # Стандартный learning rate для PPO
-        n_steps=50,  # Количество шагов на среду для сбора данных
-        batch_size=64,  # Размер батча (должен быть <= n_steps * num_envs)
+        n_steps=256,  # Количество шагов на среду для сбора данных
+        batch_size=32,  # Размер батча (должен быть <= n_steps * num_envs)
         gamma=0.99,
         n_epochs=100,
         #gae_lambda=0.95,
         #clip_range=0.2,
         #ent_coef=0.01,
-        device='cpu',
+        device='cuda',
         tensorboard_log="./tb/"
     )
     
     # Настройка коллбеков
     checkpoint_callback = CheckpointCallback(
-        save_freq=100,  # Сохранять каждые 100 шагов
+        save_freq=500,  # Сохранять каждые 500 шагов
         save_path="./checkpoints/",
         name_prefix="ppo_rogue_parallel"
     )

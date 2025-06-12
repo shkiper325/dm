@@ -1,4 +1,4 @@
-from typing import Any, Tuple, Dict, List
+from typing import Any, Tuple, Dict, List, Set, Optional, Optional, Set
 import gym
 from gym import spaces
 import numpy as np
@@ -61,7 +61,9 @@ class RogueEnv(gym.Env):
 
         self.max_steps = max_steps
         self.curr_step = 0
-        self.last_score = 0
+        self.main_score = 0
+
+        self.plus_tracker = TerminalScreen()
 
     def reset(self, seed=None, options=None) -> Tuple[Any, Dict[str, Any]]:
         """
@@ -71,13 +73,18 @@ class RogueEnv(gym.Env):
             Tuple containing the initial observation and info dict.
         """
         super().reset(seed=seed)
-        
-        self.iface.restart()
-        self.curr_step = 0
-        obs = self.iface.state()
-        self.last_score = self._non_empty(obs)
 
-        info = {"score": self.last_score, "steps": self.curr_step}
+        self.iface.restart()
+        obs = self.iface.state()
+        self.plus_tracker.reset()
+        
+        self.door_score = self.plus_tracker.dist(obs)
+        self.main_score = self._non_empty(obs)
+
+        self.curr_step = 0
+
+        info = {"main_score": self.main_score, "steps": self.curr_step, "door_score": self.door_score}
+
         return list2onehot(obs), info
 
     def step(self, action: Any) -> Tuple[Any, float, bool, bool, Dict[str, Any]]:
@@ -109,9 +116,13 @@ class RogueEnv(gym.Env):
         self.iface.key(action_map[action])
         obs = self.iface.state()
 
-        new_score = self._non_empty(obs)
-        reward = new_score - self.last_score
-        self.last_score = new_score
+        new_main_score = self._non_empty(obs)
+        main_diff = np.tanh(new_main_score - self.main_score)
+        self.main_score = new_main_score
+
+        new_door_score = self.plus_tracker.dist(obs)
+        door_diff = np.tanh(new_door_score - self.door_score)
+        self.door_score = new_door_score
 
         self.curr_step += 1
         
@@ -119,9 +130,9 @@ class RogueEnv(gym.Env):
         terminated = False  # Пока нет условий естественного завершения
         truncated = self.curr_step >= self.max_steps
 
-        info = {"score": new_score, "steps": self.curr_step}
+        info = {"main_score": self.main_score, "steps": self.curr_step  , "door_score": self.door_score}
 
-        return list2onehot(obs), reward, terminated, truncated, info
+        return list2onehot(obs), main_diff + door_diff, terminated, truncated, info
 
     def render(self, mode: str = "human") -> None:
         
@@ -147,3 +158,74 @@ class RogueEnv(gym.Env):
             self.close()
         except:
             pass  # Игнорируем ошибки при удалении объекта
+
+class TerminalScreen:
+    """
+    Класс для отслеживания позиций игрока '@' на терминальном экране и вычисления
+    минимального L1-расстояния до непосещённых символов '+'.
+    """
+
+    def __init__(self):
+        # Множество координат '+' (row, col), которые уже были посещены игроком
+        self.visited: Set[Tuple[int, int]] = set()
+        # Прошлое состояние экрана (для детекции посещения '+')
+        self._last_grid: Optional[List[str]] = None
+        # Прошлая позиция игрока '@'
+        self._last_pos: Optional[Tuple[int, int]] = None
+
+    def reset(self) -> None:
+        """
+        Сбросить историю посещённых '+'.
+        После вызова reset() все '+' на экране будут считаться непосещёнными.
+        """
+        self.visited.clear()
+        self._last_grid = None
+        self._last_pos = None
+
+    def dist(self, grid: List[str]) -> int:
+        """
+        Рассчитать минимальное L1-расстояние от текущей позиции игрока '@'
+        до любого символа '+' в grid, который ещё не был посещён.
+        При этом, если на предыдущем шаге игрок пришёл в клетку, где в прошлой версии grid
+        стоял '+', то эта координата будет помечена как посещённая.
+
+        :param grid: список строк одинаковой длины, представляющих экран.
+                     На нём ровно один '@' и ноль или более '+'.
+        :return: минимальное расстояние до непосещённого '+', или 0, если таких нет.
+        """
+        # Поиск текущей позиции '@'
+        current_pos = None
+        for i, row in enumerate(grid):
+            j = row.find('@')
+            if j != -1:
+                current_pos = (i, j)
+                break
+        if current_pos is None:
+            raise ValueError("Входной grid не содержит символа '@'")
+
+        # Если у нас есть прошлый grid и игрок переместился
+        if self._last_grid is not None and self._last_pos is not None:
+            # Если на прошлой grid в точке current_pos был '+', то отметим её как посещённую
+            i_cur, j_cur = current_pos
+            if (i_cur, j_cur) != self._last_pos:
+                if self._last_grid[i_cur][j_cur] == '+':
+                    self.visited.add((i_cur, j_cur))
+
+        # Обновляем сохранённое прошлое состояние
+        self._last_grid = list(grid)  # строки неизменяемы, копирование списка достаточно
+        self._last_pos = current_pos
+
+        # Сбор всех '+' на экране, исключая уже посещённые
+        targets = []
+        for i, row in enumerate(grid):
+            for j, ch in enumerate(row):
+                if ch == '+' and (i, j) not in self.visited:
+                    targets.append((i, j))
+
+        if not targets:
+            return 0
+
+        # Вычисляем минимальное L1-расстояние
+        ci, cj = current_pos
+        min_dist = min(abs(ci - ti) + abs(cj - tj) for ti, tj in targets)
+        return min_dist
