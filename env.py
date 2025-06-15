@@ -61,9 +61,31 @@ class RogueEnv(gym.Env):
 
         self.max_steps = max_steps
         self.curr_step = 0
-        # self.main_score = 0
-
+        
+        # Трекинг для системы наград
+        self.visited_positions = set()  # Посещенные позиции
+        self.found_items = set()  # Найденные предметы/сокровища
+        self.last_item_found_step = 0  # Шаг последнего найденного предмета
+        self.stairs_positions = set()  # Позиции лестниц
+        self.doors_positions = set()  # Позиции дверей
+        self.last_exploration_reward = 0  # Последняя награда за исследование
+        
         self.plus_tracker = TerminalScreen()
+
+    def _count_hash_symbols(self, state: List[str]) -> int:
+        """
+        Подсчитывает количество символов '#' на карте.
+        
+        Args:
+            state (List[str]): Состояние игры, представленное списком строк.
+        
+        Returns:
+            int: Количество символов '#' на карте.
+        """
+        hash_count = 0
+        for line in state:
+            hash_count += line.count('#')
+        return hash_count
 
     def _find_player(self, state: List[str]) -> Tuple[int, int]:
         """
@@ -92,13 +114,23 @@ class RogueEnv(gym.Env):
 
         self.iface.restart()
         obs = self.iface.state()
-        # self.visited = set(self._find_player(obs))  # Инициализируем посещённые позиции
-        self.plus_tracker.reset()
-        
-        self.door_score = self.plus_tracker.dist(obs)
-        # self.main_score = self._non_empty(obs)
-
+    
         self.curr_step = 0
+        
+        # Сброс трекинга для системы наград
+        self.visited_positions.clear()
+        self.found_items.clear()
+        self.last_item_found_step = 0
+        self.stairs_positions.clear()
+        self.doors_positions.clear()
+        self.last_exploration_reward = 0
+        
+        # Добавляем начальную позицию игрока в посещенные
+        try:
+            player_pos = self._find_player(obs)
+            self.visited_positions.add(player_pos)
+        except ValueError:
+            pass  # Игрок может быть не найден в начальном состоянии
 
         info = {"steps": self.curr_step}
 
@@ -130,18 +162,19 @@ class RogueEnv(gym.Env):
         if action not in action_map:
             raise ValueError(f"Invalid action: {action}. Must be one of {list(action_map.keys())}.")
         
+        # Сохраняем старое состояние для расчета награды
+        old_state = self.iface.state()
+        old_pos = self._find_player(old_state)
+        
+        # Выполняем действие
         self.iface.key(action_map[action])
-        obs = self.iface.state()
-
-        # new_main_score = self._non_empty(obs)
-        # main_diff = np.tanh(new_main_score - self.main_score)
-        # self.main_score = new_main_score
-
-        new_door_score = self.plus_tracker.dist(obs)
-        door_diff = new_door_score - self.door_score
-        self.door_score = new_door_score
-
-        reward = -door_diff  # Используем разницу в расстоянии до '+'
+        
+        # Получаем новое состояние
+        new_state = self.iface.state()
+        new_pos = self._find_player(new_state)
+        
+        # Рассчитываем награду с помощью новой системы
+        reward = self._calculate_reward(old_state, new_state, old_pos, new_pos)
 
         self.curr_step += 1
         
@@ -149,10 +182,14 @@ class RogueEnv(gym.Env):
         terminated = False  # Пока нет условий естественного завершения
         truncated = self.curr_step >= self.max_steps
 
-        info = {"steps": self.curr_step}
+        info = {
+            "steps": self.curr_step,
+            "visited_positions": len(self.visited_positions),
+            "found_items": len(self.found_items),
+            "player_position": new_pos
+        }
 
-        # return list2onehot(obs), main_diff + door_diff, terminated, truncated, info
-        return list2onehot(obs), reward, terminated, truncated, info
+        return list2onehot(new_state), reward, terminated, truncated, info
 
     def render(self, mode: str = "human") -> None:
         
@@ -178,6 +215,137 @@ class RogueEnv(gym.Env):
             self.close()
         except:
             pass  # Игнорируем ошибки при удалении объекта
+
+    def _get_items_and_features(self, state: List[str]) -> Dict[str, List[Tuple[int, int]]]:
+        """
+        Находит все важные символы на карте (предметы, лестницы, двери и т.д.).
+        
+        Args:
+            state (List[str]): Состояние игры
+            
+        Returns:
+            Dict[str, List[Tuple[int, int]]]: Словарь с позициями различных символов
+        """
+        features = {
+            'treasures': [],  # Сокровища: $, *
+            'items': [],      # Предметы: !, ?, ), ], =
+            'stairs': [],     # Лестницы: %
+            'doors': [],      # Двери: +
+            'enemies': [],    # Враги: буквы A-Z, a-z (кроме @)
+        }
+        
+        treasure_symbols = {'$', '*'}
+        item_symbols = {'!', '?', ')', ']', '='}
+        
+        for i, row in enumerate(state):
+            for j, char in enumerate(row):
+                if char in treasure_symbols:
+                    features['treasures'].append((i, j))
+                elif char in item_symbols:
+                    features['items'].append((i, j))
+                elif char == '%':
+                    features['stairs'].append((i, j))
+                elif char == '+':
+                    features['doors'].append((i, j))
+                elif char.isalpha() and char != '@':
+                    features['enemies'].append((i, j))
+                    
+        return features
+    
+    def _calculate_reward(self, old_state: List[str], new_state: List[str], 
+                         old_pos: Tuple[int, int], new_pos: Tuple[int, int]) -> float:
+        """
+        Рассчитывает награду на основе изменения состояния игры.
+        
+        Args:
+            old_state: Предыдущее состояние
+            new_state: Новое состояние  
+            old_pos: Предыдущая позиция игрока
+            new_pos: Новая позиция игрока
+            
+        Returns:
+            float: Общая награда за шаг
+        """
+        reward = 0.0
+        
+        # 1. Базовая награда за выживание
+        reward += 0.01
+        
+        # 2. Штраф за столкновение со стеной (нет движения)
+        if old_pos == new_pos:
+            reward -= 0.1
+            return reward  # Ранний возврат при столкновении
+        
+        # 3. Награда за исследование новых территорий
+        if new_pos not in self.visited_positions:
+            reward += 0.15  # Значительная награда за новые клетки
+            self.visited_positions.add(new_pos)
+        else:
+            # Штраф за повторное посещение (убывает с количеством посещений)
+            visit_count = sum(1 for pos in self.visited_positions if pos == new_pos)
+            reward -= 0.02 * min(visit_count, 5)  # Максимальный штраф 0.1
+        
+        # 4. Награды за нахождение предметов и сокровищ
+        old_features = self._get_items_and_features(old_state)
+        new_features = self._get_items_and_features(new_state)
+        
+        # Проверяем, собрал ли игрок что-то (предмет исчез с карты)
+        old_treasures = set(old_features['treasures'])
+        new_treasures = set(new_features['treasures'])
+        collected_treasures = old_treasures - new_treasures
+        
+        old_items = set(old_features['items'])
+        new_items = set(new_features['items'])
+        collected_items = old_items - new_items
+        
+        # Большая награда за сокровища
+        if collected_treasures:
+            reward += 1.0 * len(collected_treasures)
+            self.last_item_found_step = self.curr_step
+            
+        # Средняя награда за предметы
+        if collected_items:
+            reward += 0.5 * len(collected_items)
+            self.last_item_found_step = self.curr_step
+        
+        # 5. Прогресс к важным целям (лестницы, двери)
+        if new_features['stairs']:
+            # Награда за приближение к лестницам
+            min_stairs_dist = min(abs(new_pos[0] - pos[0]) + abs(new_pos[1] - pos[1]) 
+                                for pos in new_features['stairs'])
+            old_min_stairs_dist = float('inf')
+            if old_features['stairs']:
+                old_min_stairs_dist = min(abs(old_pos[0] - pos[0]) + abs(old_pos[1] - pos[1]) 
+                                        for pos in old_features['stairs'])
+            
+            if old_min_stairs_dist != float('inf') and min_stairs_dist < old_min_stairs_dist:
+                reward += 0.05  # Награда за приближение к лестнице
+        
+        if new_features['doors']:
+            # Награда за приближение к дверям
+            min_door_dist = min(abs(new_pos[0] - pos[0]) + abs(new_pos[1] - pos[1]) 
+                              for pos in new_features['doors'])
+            old_min_door_dist = float('inf')
+            if old_features['doors']:
+                old_min_door_dist = min(abs(old_pos[0] - pos[0]) + abs(old_pos[1] - pos[1]) 
+                                      for pos in old_features['doors'])
+            
+            if old_min_door_dist != float('inf') and min_door_dist < old_min_door_dist:
+                reward += 0.03  # Меньшая награда за приближение к двери
+        
+        # 6. Штраф за бездействие (долго не находил предметы)
+        steps_since_item = self.curr_step - self.last_item_found_step
+        if steps_since_item > 50:
+            reward -= 0.01 * min(steps_since_item - 50, 100) / 100  # Растущий штраф
+        
+        # 7. Небольшой штраф за близость к врагам (опционально)
+        if new_features['enemies']:
+            min_enemy_dist = min(abs(new_pos[0] - pos[0]) + abs(new_pos[1] - pos[1]) 
+                               for pos in new_features['enemies'])
+            if min_enemy_dist <= 2:  # Если враг очень близко
+                reward -= 0.02 * (3 - min_enemy_dist)  # Штраф увеличивается при приближении
+        
+        return reward
 
 class TerminalScreen:
     """
