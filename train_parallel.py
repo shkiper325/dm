@@ -169,7 +169,7 @@ def train_parallel_ppo():
     
     # Настройка коллбеков
     checkpoint_callback = CheckpointCallback(
-        save_freq=2000,  # Сохранять каждые ~1000 шагов
+        save_freq=max(2000, num_envs * model.n_steps),  # Сохранять каждые ~1000 шагов
         save_path="./checkpoints/",
         name_prefix="ppo_rogue_parallel"
     )
