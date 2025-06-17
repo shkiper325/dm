@@ -18,7 +18,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from model_save_callback import SaveEveryNStepsCallback
 from mean_reward_per_batch_callback import MeanRewardPerBatchCallback
 
-SNAPSHOT_NAME = "checkpoints/ppo_rogue_parallel_98304_steps.zip"
+SNAPSHOT_NAME = None #"checkpoints/ppo_rogue_parallel_98304_steps.zip"
 
 class CustomCNNFeatureExtractor(BaseFeaturesExtractor):
     """
